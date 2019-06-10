@@ -8,7 +8,7 @@ namespace Ilias_sp\Nexus_cli;
 // 
 // 
 
-define('NEXUS_CLI_VERSION', '1.14' );
+define('NEXUS_CLI_VERSION', '1.15' );
 
 define('APPPATH', dirname(__FILE__));
 define('FILENAME', basename(__FILE__));
@@ -16,6 +16,7 @@ define('FILENAME', basename(__FILE__));
 function print_usage()
 {
     echo "USAGE: \n";
+    echo "\n";
     echo FILENAME . " help \n";
     echo FILENAME . " configure \n";
     echo FILENAME . " image list \n";
