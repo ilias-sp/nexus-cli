@@ -1,0 +1,463 @@
+#!/usr/bin/env php
+<?php
+
+namespace Ilias_sp\Nexus_cli;
+
+// 
+// 
+// 
+// 
+
+define('NEXUS_CLI_VERSION', '1.13' );
+
+define('APPPATH', dirname(__FILE__));
+define('FILENAME', basename(__FILE__));
+
+function print_usage()
+{
+    echo "USAGE: \n";
+    echo FILENAME . " help \n";
+    echo FILENAME . " configure \n";
+    echo FILENAME . " image list \n";
+    echo FILENAME . " image info -name <component's name> -tag <tag id> \n";
+    echo FILENAME . " image tags -name <component's name> \n";
+    echo FILENAME . " image tag delete -name <component's name> -tag <tag id> \n";
+    echo "\n";
+    echo FILENAME . " version: " . NEXUS_CLI_VERSION . "\n";
+}
+
+class Nexus_cli
+{
+    private $config;
+    
+    //----------------------------------------------------
+    // 
+    //----------------------------------------------------
+    public function __construct($config) {
+
+        $this->config = $config;
+
+    }
+    //----------------------------------------------------
+    // 
+    //----------------------------------------------------
+    public function nexus_images_list_get() {
+
+        $url = $this->config['nexus_host'] . '/repository/' . $this->config['nexus_repository'] . '/v2/_catalog';
+
+        $headers = array(
+            'Authorization: Basic ' . base64_encode($this->config['nexus_username'] . ':' . $this->config['nexus_password']),
+            'Accept-Encoding: gzip',
+            'Accept: application/vnd.docker.distribution.manifest.v2+json'
+        );
+        
+        $web_response = $this->_run_api_call($url, 'GET', $headers, FALSE);
+    
+        if ($web_response[0]['http_code'] === 200) {
+    
+            $json_content = json_decode($web_response[2]);
+
+            if ($json_content != FALSE) {
+
+                foreach ($json_content->repositories as $repository) {
+
+                    echo $repository . "\n";
+                }
+            }
+            
+            return TRUE;
+    
+        }
+
+        return FALSE;
+    
+    }
+    //----------------------------------------------------
+    // 
+    //----------------------------------------------------
+    public function nexus_tags_by_image_name_get($image_name) {
+
+        $url = $this->config['nexus_host'] . '/repository/' . $this->config['nexus_repository'] . '/v2/' . $image_name . '/tags/list';
+
+        $headers = array(
+            'Authorization: Basic ' . base64_encode($this->config['nexus_username'] . ':' . $this->config['nexus_password']),
+            'Accept-Encoding: gzip',
+            'Accept: application/vnd.docker.distribution.manifest.v2+json'
+        );
+
+        $web_response = $this->_run_api_call($url, 'GET', $headers, FALSE);
+    
+        if ($web_response[0]['http_code'] === 200) {
+    
+            $json_content = json_decode($web_response[2]);
+
+            if ($json_content != FALSE) {
+
+                foreach ($json_content->tags as $tag) {
+
+                    echo $tag . "\n";
+                }
+            }
+
+            return TRUE;
+    
+        }
+
+        return FALSE;
+    
+    }
+    //----------------------------------------------------
+    // 
+    //----------------------------------------------------
+    public function nexus_tag_by_image_name_delete($image_name, $tag) {
+
+        $docker_content_digest = '';
+        
+        $url = $this->config['nexus_host'] . '/repository/' . $this->config['nexus_repository'] . '/v2/' . $image_name . '/manifests/' . $tag;
+        
+        $headers = array(
+            'Authorization: Basic ' . base64_encode($this->config['nexus_username'] . ':' . $this->config['nexus_password']),
+            'Accept-Encoding: gzip',
+            'Accept: application/vnd.docker.distribution.manifest.v2+json'
+        );
+
+        $web_response = $this->_run_api_call($url, 'GET', $headers, TRUE);
+    
+        if ($web_response[0]['http_code'] === 200) {
+    
+            if (count($web_response[1]) === 0) {
+
+                echo $image_name . ":" . $tag . " was NOT deleted. HTTP code: " . $web_response[0]['http_code'] . "\n";
+                return FALSE;
+
+            } else {
+
+                foreach ($web_response[1] as $k => $v) {
+
+                    if ($k === 'docker-content-digest' && count($v) === 1) { 
+
+                        $docker_content_digest = $v[0];
+
+                    }
+                }
+
+                if ($docker_content_digest === '') {
+
+                    echo $image_name . ":" . $tag . " was NOT deleted. HTTP code: " . $web_response[0]['http_code'] . "\n";
+                    return FALSE;
+                    
+                }
+
+                $url_2 = $this->config['nexus_host'] . '/repository/' . $this->config['nexus_repository'] . '/v2/' . $image_name . '/manifests/' . $docker_content_digest;
+
+                $web_response_2 = $this->_run_api_call($url_2, 'DELETE', $headers, FALSE);
+
+                if ($web_response_2[0]['http_code'] === 202) {
+
+                    echo $image_name . ":" . $tag . " was deleted." . "\n";
+                    return TRUE;
+
+                } else {
+
+                    echo $image_name . ":" . $tag . " was NOT deleted. HTTP code: " . $web_response_2[0]['http_code'] . "\n";
+                    return FALSE;
+
+                }
+
+            }
+    
+        } else {
+
+            echo $image_name . ":" . $tag . " was NOT deleted. HTTP code: " . $web_response[0]['http_code'] . "\n";
+            return FALSE;
+
+        }
+
+        return FALSE;
+    
+    }
+    //----------------------------------------------------
+    // 
+    //----------------------------------------------------
+    public function nexus_info_by_image_name_tag($image_name, $tag) {
+         
+        $url = $this->config['nexus_host'] . '/repository/' . $this->config['nexus_repository'] . '/v2/' . $image_name . '/manifests/' . $tag;
+        
+        $headers = array(
+            'Authorization: Basic ' . base64_encode($this->config['nexus_username'] . ':' . $this->config['nexus_password']),
+            'Accept-Encoding: gzip',
+            'Accept: application/vnd.docker.distribution.manifest.v2+json'
+        );
+
+        $web_response = $this->_run_api_call($url, 'GET', $headers, FALSE);
+    
+        if ($web_response[0]['http_code'] === 200) {
+    
+            $json_content = json_decode($web_response[2]);
+
+            foreach ($json_content->layers as $layer) {
+                
+                echo "type: " . $layer->mediaType . ", digest:" . $layer->digest . ", size: " . $layer->size . "\n";
+            }
+            return TRUE;
+    
+        } else {
+
+            echo $image_name . ":" . $tag . " was NOT found. HTTP code: " . $web_response[0]['http_code'] . "\n";
+            return FALSE;
+
+        }
+
+        return FALSE;
+
+    }
+    //----------------------------------------------------
+    //
+    //----------------------------------------------------
+    private function _run_api_call($web_url, $access_method, $headers, $need_parse_resp_headers)
+    {
+        
+        $resp_headers = [];
+        
+        $ch = curl_init();
+
+        curl_setopt($ch, CURLOPT_FOLLOWLOCATION, false);
+        curl_setopt($ch, CURLOPT_URL, $web_url);
+
+        if ($this->config['skip_certification_checks'] === TRUE) {
+
+            curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, 0);
+            curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, 0);
+        }
+        
+        if ($access_method === 'POST') {
+            
+            curl_setopt($ch, CURLOPT_POST, 1);
+        }
+        elseif ($access_method != 'GET') {
+            
+            curl_setopt($ch, CURLOPT_CUSTOMREQUEST, $access_method);
+        
+        }
+
+        if ($headers !== NULL) {
+            curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
+        }
+
+        curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 10);
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
+        curl_setopt($ch, CURLINFO_HEADER_OUT, true);
+        // curl_setopt($ch, CURLOPT_HEADER, true);
+        //curl_setopt($ch, CURLOPT_REFERER, 'http://www.example.com/1');
+
+        // ----------
+        // from: https://stackoverflow.com/questions/9183178/can-php-curl-retrieve-response-headers-and-body-in-a-single-request
+        // 
+        if ($need_parse_resp_headers === TRUE) {
+            
+            curl_setopt($ch, CURLOPT_HEADERFUNCTION, 
+            function($curl, $header) use (&$resp_headers)
+                {
+                    $len = strlen($header);
+                    $header = explode(':', $header, 2);
+                    if (count($header) < 2) // ignore invalid headers
+                    return $len;
+    
+                    $name = strtolower(trim($header[0]));
+                    if (!array_key_exists($name, $resp_headers))
+                    $resp_headers[$name] = [trim($header[1])];
+                    else
+                    $resp_headers[$name][] = trim($header[1]);
+    
+                    return $len;
+                }
+            );
+        }
+        // ----------
+        $html_response = curl_exec($ch);
+
+        $curl_transfer_result = curl_getinfo($ch);
+
+        if ($this->config['DEBUG_MODE'] === TRUE) {
+
+            var_dump(array($curl_transfer_result, $resp_headers, $html_response));
+
+        }
+        
+        return array($curl_transfer_result, $resp_headers, $html_response);
+
+    }
+    //----------------------------------------------------
+    //
+    //----------------------------------------------------
+    public function configure_environment()
+    {
+        if (file_exists(APPPATH . '/.config')) {
+
+            echo "WARNING: Configuration file .config already exists. Continuing will overwrite the existing file.\n";
+
+        }
+        
+        $nexus_url = readline("Enter Nexus Host (http:10.10.10.2:9090): ");
+
+        $nexus_username = readline("Enter Nexus Username: ");
+
+        $nexus_password = readline("Enter Nexus Password: ");
+
+        $nexus_repository = readline("Enter Nexus Repository: ");
+
+        if (strlen(trim($nexus_url)) == 0 || 
+            strlen(trim($nexus_username)) == 0 || 
+            strlen(trim($nexus_password)) == 0 || 
+            strlen(trim($nexus_repository)) == 0 )  {
+
+                echo "ERROR: At least one of the previous variables was not filled in. Aborting configuration.\n";
+                return FALSE;
+
+        }
+
+        $config_file_text = '<?php
+
+// Nexus details:
+$config["nexus_host"] = "' . trim($nexus_url) . '";
+$config["nexus_username"] = "' . trim($nexus_username) . '";
+$config["nexus_password"] = "' . trim($nexus_password) . '";
+$config["nexus_repository"] = "' . trim($nexus_repository) . '";
+$config["skip_certification_checks"] = TRUE;
+// 
+$config["DEBUG_MODE"] = FALSE;
+';
+
+        if (file_put_contents(APPPATH . '/.config', $config_file_text) !== FALSE) {
+  
+            echo "INFO: Nexus details was saved to configuration file: .config.\n";
+            return TRUE;
+
+        }
+        else {
+
+            echo "ERROR: Could NOT save Nexus details to configuration file: .config.\n";
+            return FALSE;            
+
+        }
+        return TRUE;
+    }
+    //----------------------------------------------------
+    //
+    //----------------------------------------------------
+
+    //----------------------------------------------------
+    //
+    //----------------------------------------------------
+}
+
+
+
+
+//-----------------------------------------------------------------------------------------------------------------
+// MAIN:
+//-----------------------------------------------------------------------------------------------------------------
+if (count($argv) === 1) {
+    
+    print_usage();
+    exit(1);
+
+}
+
+// read config file:
+$config = [];
+
+if (file_exists(APPPATH . '/.config') === FALSE) {
+
+    if (isset($argv[1]) && $argv[1] != 'configure' && $argv[1] != 'help' ) {
+        echo "ERROR: Configuration file .config was NOT found. Run: '" . FILENAME . " configure' first.\n";
+        exit(1);
+    }    
+
+} else {
+    
+    require_once(APPPATH . '/.config');
+
+}
+
+
+// 
+
+$nexus_cli = new \Ilias_sp\Nexus_cli\Nexus_cli($config);
+
+if ($argv[1] == "configure") {
+
+    $nexus_cli->configure_environment();
+
+} 
+else if ($argv[1] == "image") {
+
+    if ($argv[2] === 'list') {
+
+        if ($nexus_cli->nexus_images_list_get() === TRUE) {
+            exit(0);
+        } else {
+            exit(1);
+        }
+
+    }
+    else if ($argv[2] === 'tags' && $argv[3] === '-name') {
+
+        if (!isset($argv[4])) {
+
+            echo "ERROR: Didnt provide Component's name. Exiting .. \n";
+            exit(1);
+
+        } else {
+
+            if ($nexus_cli->nexus_tags_by_image_name_get($argv[4]) === TRUE) {
+                exit(0);
+            } else {
+                exit(1);
+            }
+            
+        }
+
+    }
+    else if ($argv[2] === 'delete' && $argv[3] === '-name' && $argv[5] === '-tag') {
+
+        if (!isset($argv[6])) {
+
+            echo "ERROR: Didnt provide tag to delete. Exiting .. \n";
+            exit(1);
+
+        } else {
+
+            if ($nexus_cli->nexus_tag_by_image_name_delete($argv[4], $argv[6]) === TRUE) {
+                exit(0);
+            } else {
+                exit(1);
+            }
+            
+        }
+
+    }
+    else if ($argv[2] === 'info' && $argv[3] === '-name' && $argv[5] === '-tag') {
+
+        if (!isset($argv[6])) {
+
+            echo "ERROR: Didnt provide tag to delete. Exiting .. \n";
+            exit(1);
+
+        } else {
+
+            if ($nexus_cli->nexus_info_by_image_name_tag($argv[4], $argv[6]) === TRUE) {
+                exit(0);
+            } else {
+                exit(1);
+            }
+            
+        }
+
+    }
+}
+else if ($argv[1] == "help") {
+
+    print_usage();
+
+}
