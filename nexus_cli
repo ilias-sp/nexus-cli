@@ -8,7 +8,7 @@ namespace Ilias_sp\Nexus_cli;
 // 
 // 
 
-define('NEXUS_CLI_VERSION', '1.13' );
+define('NEXUS_CLI_VERSION', '1.14' );
 
 define('APPPATH', dirname(__FILE__));
 define('FILENAME', basename(__FILE__));

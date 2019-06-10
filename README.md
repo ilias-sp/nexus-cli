@@ -1,4 +1,4 @@
-## About
+## About nexus_cli
 
 This is a CLI tool written in PHP to interact with a Nexus Repository OSS that can assist you in certain tasks, mainly to provide the convenience of CLI for massively deleting images/artifacts.
 
